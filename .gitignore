@@ -1,0 +1,373 @@
+# Kubernetes Voting App - .gitignore
+
+# =============================================================================
+# KUBERNETES & DOCKER
+# =============================================================================
+
+# Kubernetes secrets (if accidentally created as files)
+*.secret
+*-secret.yaml
+*-secrets.yaml
+
+# Kubernetes temporary files
+*.tmp
+*.temp
+k8s-temp/
+temp-manifests/
+
+# Docker build context
+.dockerignore
+Dockerfile.tmp
+
+# Helm charts (if added later)
+charts/*/charts/
+charts/*/requirements.lock
+charts/*/Chart.lock
+
+# Kustomize build output
+kustomization.yaml.bak
+overlays/*/kustomization.yaml.bak
+
+# =============================================================================
+# DEVELOPMENT TOOLS
+# =============================================================================
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Vim
+*.vim
+.vimrc.local
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# LOGS & MONITORING
+# =============================================================================
+
+# Application logs
+*.log
+logs/
+log/
+
+# Kubernetes logs
+kubectl-logs/
+pod-logs/
+
+# Monitoring data
+prometheus-data/
+grafana-data/
+
+# =============================================================================
+# SECURITY & CREDENTIALS
+# =============================================================================
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# SSH keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# GPG keys
+*.gpg
+*.asc
+
+# Kubernetes config files (personal)
+kubeconfig
+.kube/config
+config.yaml.backup
+
+# Certificate files
+tls.crt
+tls.key
+ca.crt
+ca.key
+
+# =============================================================================
+# BUILD & DEPLOYMENT
+# =============================================================================
+
+# Build artifacts
+build/
+dist/
+target/
+out/
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# =============================================================================
+# TESTING
+# =============================================================================
+
+# Test results
+test-results/
+coverage/
+*.coverage
+.nyc_output/
+
+# Performance test results
+load-test-results/
+performance-reports/
+
+# Test databases
+test.db
+*.test.db
+
+# =============================================================================
+# CLOUD & CI/CD
+# =============================================================================
+
+# Terraform (if infrastructure as code is added)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+terraform.tfvars.json
+
+# AWS
+.aws/
+
+# Google Cloud
+.gcloud/
+service-account.json
+gcp-key.json
+
+# Azure
+.azure/
+
+# GitHub Actions artifacts
+.github/workflows/artifacts/
+
+# =============================================================================
+# BACKUP & TEMPORARY FILES
+# =============================================================================
+
+# Backup files
+*.bak
+*.backup
+*.old
+*~
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Cache directories
+.cache/
+cache/
+
+# =============================================================================
+# DATABASE & STORAGE
+# =============================================================================
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Database dumps
+*.sql
+*.dump
+
+# Persistent volume data (if running locally)
+postgres-data/
+redis-data/
+mysql-data/
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+
+# Generated documentation
+docs/_build/
+site/
+
+# Markdown temporary files
+*.md.tmp
+*.md.bak
+
+# =============================================================================
+# PACKAGE MANAGERS
+# =============================================================================
+
+# npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Go
+go.sum.backup
+vendor/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# =============================================================================
+# OPERATING SYSTEM
+# =============================================================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# PROJECT SPECIFIC
+# =============================================================================
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Local Kubernetes manifests
+*-local.yaml
+*-dev.yaml
+local-*.yaml
+
+# Personal notes and TODO files
+NOTES.md
+TODO.md
+PERSONAL.md
+
+# Local scripts
+local-scripts/
+personal-scripts/
+
+# Configuration overrides
+config-override.yaml
+local-config.yaml
+
+# =============================================================================
+# SECURITY SCANNING RESULTS
+# =============================================================================
+
+# Vulnerability scan results
+trivy-results.*
+security-scan.*
+vulnerability-report.*
+
+# =============================================================================
+# PERFORMANCE & PROFILING
+# =============================================================================
+
+# Performance profiles
+*.prof
+*.pprof
+profile.*
+
+# Load test results
+load-test.*
+performance-test.*
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+
+# Archives
+*.tar
+*.gz
+*.bz2
+*.xz
+
+# Patches
+*.patch
+*.diff
+
+# Lock files (keep package-lock.json but ignore others)
+Pipfile.lock
+poetry.lock
+Gemfile.lock
+
+# Editor directories and files
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  labels:
+    app: demo-voting-app
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-voting-app
+      tier: backend
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: demo-voting-app
+        tier: backend
+        name: postgres-pod
+        component: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:9.4
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: "trust"
+        ports:
+        - containerPort: 5432
+        command: ["/bin/bash"]
+        args: ["-c", "docker-entrypoint.sh postgres & sleep 10 && PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE TABLE IF NOT EXISTS votes (id VARCHAR(255) NOT NULL UNIQUE, vote VARCHAR(255) NOT NULL);' && wait"]
