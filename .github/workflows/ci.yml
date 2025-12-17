@@ -92,10 +92,21 @@ jobs:
       run: |
         kubectl create namespace vote-app-test
         
-    - name: Deploy secrets and config
+    - name: Create test secrets and deploy config
       run: |
-        echo "🔐 Deploying secrets and configuration..."
-        kubectl apply -f voting-app-k8s/secret.yaml -n vote-app-test
+        echo "🔐 Creating test secrets and deploying configuration..."
+        
+        # Create test secrets for CI/CD
+        kubectl create secret generic db-credentials \
+          --from-literal=username=postgres \
+          --from-literal=password=postgres \
+          -n vote-app-test
+          
+        kubectl create secret generic redis-credentials \
+          --from-literal=password="" \
+          -n vote-app-test
+        
+        # Deploy config
         kubectl apply -f voting-app-k8s/config.yaml -n vote-app-test
         
     - name: Deploy services
@@ -220,6 +231,18 @@ jobs:
     - name: Deploy application
       run: |
         kubectl create namespace vote-app-perf
+        
+        # Create secrets for performance test
+        kubectl create secret generic db-credentials \
+          --from-literal=username=postgres \
+          --from-literal=password=postgres \
+          -n vote-app-perf
+          
+        kubectl create secret generic redis-credentials \
+          --from-literal=password="" \
+          -n vote-app-perf
+        
+        # Deploy application
         kubectl apply -f voting-app-k8s/ -n vote-app-perf
         kubectl wait --for=condition=available --timeout=300s deployment --all -n vote-app-perf
         

@@ -363,8 +363,17 @@ voting-app-k8s/
 # 1. Create namespace (if not exists)
 kubectl create namespace vote-app
 
-# 2. Apply secrets and config (MUST BE FIRST)
-kubectl apply -f secret.yaml -n vote-app
+# 2. Create secrets (MUST BE FIRST) - Use kubectl create for security
+kubectl create secret generic db-credentials \
+  --from-literal=username=postgres \
+  --from-literal=password=your-secure-password \
+  -n vote-app
+
+kubectl create secret generic redis-credentials \
+  --from-literal=password="" \
+  -n vote-app
+
+# 3. Apply config
 kubectl apply -f config.yaml -n vote-app
 
 # 3. Apply services (networking layer)
