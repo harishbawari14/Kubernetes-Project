@@ -11,7 +11,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Job 1: Validate Kubernetes YAML (no cluster)
+  # Job 1: Validate Kubernetes YAML (no real cluster)
   validate-k8s:
     name: Validate Kubernetes Manifests
     runs-on: ubuntu-latest
@@ -25,31 +25,33 @@ jobs:
       with:
         version: 'v1.28.0'
 
-    - name: Validate YAML syntax (client-only)
+    - name: Validate YAML syntax
       run: |
         set -e
-        echo "🔍 Validating Kubernetes YAML files (client-side)..."
+        echo "🔍 Validating Kubernetes YAML files..."
 
-        # Use an empty kubeconfig so kubectl does not try to talk to a cluster
+        # Force kubectl to use an empty kubeconfig so it does NOT try localhost:8080
         export KUBECONFIG=/tmp/kubeconfig
         touch "$KUBECONFIG"
 
-        # Validate service files
+        echo "Checking YAML syntax..."
+
+        # Validate service files (client-side only)
         for file in voting-app-k8s/Service/*.yaml; do
           if [ -f "$file" ]; then
-            echo "Validating $file"
+            echo "Validating syntax of $file"
             kubectl apply --dry-run=client --validate=false -f "$file" > /dev/null
           fi
         done
 
-        # Validate config
-        echo "Validating voting-app-k8s/config.yaml"
+        # Validate config file
+        echo "Validating syntax of voting-app-k8s/config.yaml"
         kubectl apply --dry-run=client --validate=false -f voting-app-k8s/config.yaml > /dev/null
 
         # Validate other manifests (exclude template + config)
         for file in voting-app-k8s/*.yaml; do
           if [ -f "$file" ] && [[ "$file" != *"secret-template.yaml" ]] && [[ "$file" != *"config.yaml" ]]; then
-            echo "Validating $file"
+            echo "Validating syntax of $file"
             kubectl apply --dry-run=client --validate=false -f "$file" > /dev/null
           fi
         done
@@ -69,7 +71,7 @@ jobs:
           echo "✅ No hardcoded secrets found!"
         fi
 
-  # Job 2: Security scanning with Trivy (filesystem)
+  # Job 2: Security scanning
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -128,8 +130,8 @@ jobs:
         kubectl apply -f voting-app-k8s/config.yaml -n validation-test
         kubectl apply -f voting-app-k8s/Service/ -n validation-test
 
-        kubectl apply -f voting-app-k8s/postgres-pod.yaml  -n validation-test --dry-run=server
-        kubectl apply -f voting-app-k8s/redis-pod.yaml     -n validation-test --dry-run=server
+        kubectl apply -f voting-app-k8s/postgres-pod.yaml   -n validation-test --dry-run=server
+        kubectl apply -f voting-app-k8s/redis-pod.yaml      -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/result-app-pod.yaml -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n validation-test --dry-run=server
@@ -137,7 +139,7 @@ jobs:
         echo "✅ Advanced validation passed!"
         kubectl delete namespace validation-test --ignore-not-found=true
 
-  # Job 4: Kubernetes deployment test on Minikube
+  # Job 4: Kubernetes deployment test (Minikube)
   k8s-deployment-test:
     name: Test Kubernetes Deployment
     runs-on: ubuntu-latest
@@ -175,8 +177,8 @@ jobs:
 
     - name: Deploy applications
       run: |
-        kubectl apply -f voting-app-k8s/postgres-pod.yaml  -n vote-app-test
-        kubectl apply -f voting-app-k8s/redis-pod.yaml     -n vote-app-test
+        kubectl apply -f voting-app-k8s/postgres-pod.yaml   -n vote-app-test
+        kubectl apply -f voting-app-k8s/redis-pod.yaml      -n vote-app-test
         kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app-test
         kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app-test
         kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app-test
@@ -223,7 +225,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Check docs exist
+    - name: Check README files exist
       run: |
         echo "📚 Checking documentation..."
         if [ ! -f "voting-app-k8s/README.md" ]; then
