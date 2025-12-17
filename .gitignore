@@ -1,3 +1,8 @@
-secret.yaml
-secret.yml
+# Kubernetes secrets (local only)
+voting-app-k8s/secret.yaml
+
+# Optional: other local-only config
 *.env
+*.log
+.env.local
+.env.*
