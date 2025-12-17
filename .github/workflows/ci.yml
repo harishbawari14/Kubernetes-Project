@@ -28,20 +28,46 @@ jobs:
     - name: Validate YAML syntax
       run: |
         echo "🔍 Validating Kubernetes YAML files..."
-        for file in voting-app-k8s/*.yaml voting-app-k8s/Service/*.yaml; do
+        
+        # Create temporary secrets for validation
+        kubectl create secret generic db-credentials \
+          --from-literal=username=postgres \
+          --from-literal=password=postgres \
+          --dry-run=client -o yaml | kubectl apply -f -
+          
+        kubectl create secret generic redis-credentials \
+          --from-literal=password="" \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Apply config first
+        kubectl apply -f voting-app-k8s/config.yaml --dry-run=client --validate=true
+        
+        # Validate service files
+        for file in voting-app-k8s/Service/*.yaml; do
           if [ -f "$file" ]; then
             echo "Validating $file"
             kubectl --dry-run=client --validate=true apply -f "$file" || exit 1
           fi
         done
+        
+        # Validate deployment files (excluding secret-template.yaml)
+        for file in voting-app-k8s/*.yaml; do
+          if [ -f "$file" ] && [[ "$file" != *"secret-template.yaml" ]]; then
+            echo "Validating $file"
+            kubectl --dry-run=client --validate=true apply -f "$file" || exit 1
+          fi
+        done
+        
         echo "✅ All YAML files are valid!"
         
     - name: Check for secrets in code
       run: |
         echo "🔒 Checking for hardcoded secrets..."
-        if grep -r "password.*=" voting-app-k8s/ --exclude-dir=.git || \
-           grep -r "secret.*=" voting-app-k8s/ --exclude-dir=.git || \
-           grep -r "token.*=" voting-app-k8s/ --exclude-dir=.git; then
+        
+        # Check for hardcoded secrets but exclude template files and expected patterns
+        if grep -r "password.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*" | grep -v "valueFrom" || \
+           grep -r "secret.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*" | grep -v "secretKeyRef" || \
+           grep -r "token.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*"; then
           echo "❌ Found potential hardcoded secrets!"
           exit 1
         else
@@ -242,8 +268,19 @@ jobs:
           --from-literal=password="" \
           -n vote-app-perf
         
-        # Deploy application
-        kubectl apply -f voting-app-k8s/ -n vote-app-perf
+        # Deploy config
+        kubectl apply -f voting-app-k8s/config.yaml -n vote-app-perf
+        
+        # Deploy services
+        kubectl apply -f voting-app-k8s/Service/ -n vote-app-perf
+        
+        # Deploy applications (exclude template files)
+        kubectl apply -f voting-app-k8s/postgres-pod.yaml -n vote-app-perf
+        kubectl apply -f voting-app-k8s/redis-pod.yaml -n vote-app-perf
+        kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app-perf
+        kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app-perf
+        kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app-perf
+        
         kubectl wait --for=condition=available --timeout=300s deployment --all -n vote-app-perf
         
     - name: Install hey (load testing tool)
@@ -300,7 +337,28 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🚀 Deployment Commands" >> $GITHUB_STEP_SUMMARY
         echo '```bash' >> $GITHUB_STEP_SUMMARY
+        echo "# 1. Create namespace" >> $GITHUB_STEP_SUMMARY
         echo "kubectl create namespace vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/ -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# 2. Create secrets (REQUIRED)" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl create secret generic db-credentials \\" >> $GITHUB_STEP_SUMMARY
+        echo "  --from-literal=username=postgres \\" >> $GITHUB_STEP_SUMMARY
+        echo "  --from-literal=password=your-password \\" >> $GITHUB_STEP_SUMMARY
+        echo "  -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl create secret generic redis-credentials \\" >> $GITHUB_STEP_SUMMARY
+        echo "  --from-literal=password='' \\" >> $GITHUB_STEP_SUMMARY
+        echo "  -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# 3. Deploy application" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/config.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/Service/ -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/postgres-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/redis-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# 4. Check status" >> $GITHUB_STEP_SUMMARY
         echo "kubectl get pods -n vote-app" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
