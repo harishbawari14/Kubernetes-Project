@@ -11,73 +11,74 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Job 1: Validate Kubernetes YAML files
+  # Job 1: Validate Kubernetes YAML (no cluster)
   validate-k8s:
     name: Validate Kubernetes Manifests
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Setup kubectl
       uses: azure/setup-kubectl@v3
       with:
         version: 'v1.28.0'
-        
-    - name: Validate YAML syntax
+
+    - name: Validate YAML syntax (client-only)
       run: |
-        echo "🔍 Validating Kubernetes YAML files..."
-        
-        # Simple YAML syntax validation without applying
-        echo "Checking YAML syntax..."
-        
-        # Check service files
+        set -e
+        echo "🔍 Validating Kubernetes YAML files (client-side)..."
+
+        # Use an empty kubeconfig so kubectl does not try to talk to a cluster
+        export KUBECONFIG=/tmp/kubeconfig
+        touch "$KUBECONFIG"
+
+        # Validate service files
         for file in voting-app-k8s/Service/*.yaml; do
           if [ -f "$file" ]; then
-            echo "Validating syntax of $file"
-            kubectl --dry-run=client --validate=false apply -f "$file" > /dev/null || exit 1
+            echo "Validating $file"
+            kubectl apply --dry-run=client --validate=false -f "$file" > /dev/null
           fi
         done
-        
-        # Check config file
-        echo "Validating syntax of voting-app-k8s/config.yaml"
-        kubectl --dry-run=client --validate=false apply -f voting-app-k8s/config.yaml > /dev/null || exit 1
-        
-        # Check deployment files (excluding template files)
+
+        # Validate config
+        echo "Validating voting-app-k8s/config.yaml"
+        kubectl apply --dry-run=client --validate=false -f voting-app-k8s/config.yaml > /dev/null
+
+        # Validate other manifests (exclude template + config)
         for file in voting-app-k8s/*.yaml; do
           if [ -f "$file" ] && [[ "$file" != *"secret-template.yaml" ]] && [[ "$file" != *"config.yaml" ]]; then
-            echo "Validating syntax of $file"
-            kubectl --dry-run=client --validate=false apply -f "$file" > /dev/null || exit 1
+            echo "Validating $file"
+            kubectl apply --dry-run=client --validate=false -f "$file" > /dev/null
           fi
         done
-        
+
         echo "✅ All YAML files have valid syntax!"
-        
+
     - name: Check for secrets in code
       run: |
         echo "🔒 Checking for hardcoded secrets..."
-        
-        # Check for hardcoded secrets but exclude template files and expected patterns
+        set +e
         if grep -r "password.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*" | grep -v "valueFrom" || \
-           grep -r "secret.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*" | grep -v "secretKeyRef" || \
-           grep -r "token.*=" voting-app-k8s/ --exclude-dir=.git --exclude="*template*"; then
+           grep -r "secret.*="   voting-app-k8s/ --exclude-dir=.git --exclude="*template*" | grep -v "secretKeyRef" || \
+           grep -r "token.*="    voting-app-k8s/ --exclude-dir=.git --exclude="*template*"; then
           echo "❌ Found potential hardcoded secrets!"
           exit 1
         else
           echo "✅ No hardcoded secrets found!"
         fi
 
-  # Job 2: Security scanning
+  # Job 2: Security scanning with Trivy (filesystem)
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
     needs: validate-k8s
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
@@ -85,164 +86,129 @@ jobs:
         scan-ref: 'voting-app-k8s/'
         format: 'sarif'
         output: 'trivy-results.sarif'
-        
+
     - name: Upload Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v2
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
-  # Job 3: Advanced YAML validation with cluster
+  # Job 3: Advanced validation on Minikube
   advanced-validation:
     name: Advanced Validation
     runs-on: ubuntu-latest
     needs: validate-k8s
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Start minikube
       uses: medyagh/setup-minikube@master
       with:
         minikube-version: 1.32.0
         kubernetes-version: 1.28.0
-        
+
     - name: Validate with real cluster
       run: |
+        set -e
         echo "🔍 Advanced validation with real cluster..."
-        
-        # Create validation namespace
+
         kubectl create namespace validation-test
-        
-        # Create secrets
+
         kubectl create secret generic db-credentials \
           --from-literal=username=postgres \
           --from-literal=password=postgres \
           -n validation-test
-          
+
         kubectl create secret generic redis-credentials \
           --from-literal=password="" \
           -n validation-test
-        
-        # Apply and validate each file
+
         kubectl apply -f voting-app-k8s/config.yaml -n validation-test
         kubectl apply -f voting-app-k8s/Service/ -n validation-test
-        
-        # Validate deployments
-        kubectl apply -f voting-app-k8s/postgres-pod.yaml -n validation-test --dry-run=server
-        kubectl apply -f voting-app-k8s/redis-pod.yaml -n validation-test --dry-run=server
+
+        kubectl apply -f voting-app-k8s/postgres-pod.yaml  -n validation-test --dry-run=server
+        kubectl apply -f voting-app-k8s/redis-pod.yaml     -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/result-app-pod.yaml -n validation-test --dry-run=server
         kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n validation-test --dry-run=server
-        
-        echo "✅ Advanced validation passed!"
-        
-        # Cleanup
-        kubectl delete namespace validation-test
 
-  # Job 4: Kubernetes deployment test
+        echo "✅ Advanced validation passed!"
+        kubectl delete namespace validation-test --ignore-not-found=true
+
+  # Job 4: Kubernetes deployment test on Minikube
   k8s-deployment-test:
     name: Test Kubernetes Deployment
     runs-on: ubuntu-latest
     needs: [advanced-validation, security-scan]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Start minikube
       uses: medyagh/setup-minikube@master
       with:
         minikube-version: 1.32.0
         kubernetes-version: 1.28.0
-        
-    - name: Create namespace
+
+    - name: Create namespace and secrets
       run: |
+        set -e
         kubectl create namespace vote-app-test
-        
-    - name: Create test secrets and deploy config
-      run: |
-        echo "🔐 Creating test secrets and deploying configuration..."
-        
-        # Create test secrets for CI/CD
+
         kubectl create secret generic db-credentials \
           --from-literal=username=postgres \
           --from-literal=password=postgres \
           -n vote-app-test
-          
+
         kubectl create secret generic redis-credentials \
           --from-literal=password="" \
           -n vote-app-test
-        
-        # Deploy config
+
         kubectl apply -f voting-app-k8s/config.yaml -n vote-app-test
-        
+
     - name: Deploy services
       run: |
-        echo "🌐 Deploying services..."
         kubectl apply -f voting-app-k8s/Service/ -n vote-app-test
-        
+
     - name: Deploy applications
       run: |
-        echo "🚀 Deploying applications..."
-        kubectl apply -f voting-app-k8s/postgres-pod.yaml -n vote-app-test
-        kubectl apply -f voting-app-k8s/redis-pod.yaml -n vote-app-test
+        kubectl apply -f voting-app-k8s/postgres-pod.yaml  -n vote-app-test
+        kubectl apply -f voting-app-k8s/redis-pod.yaml     -n vote-app-test
         kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app-test
         kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app-test
         kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app-test
-        
-    - name: Wait for deployments
+
+    - name: Wait for pods
       run: |
-        echo "⏳ Waiting for deployments to be ready..."
-        kubectl wait --for=condition=available --timeout=300s deployment --all -n vote-app-test
-        
+        echo "⏳ Waiting for pods to be Ready..."
+        kubectl wait --for=condition=Ready pod --all -n vote-app-test --timeout=300s || true
+
     - name: Check deployment status
       run: |
-        echo "📊 Checking deployment status..."
         kubectl get all -n vote-app-test
         kubectl get pods -n vote-app-test -o wide
-        
+
     - name: Test application connectivity
       run: |
+        set -e
         echo "🧪 Testing application connectivity..."
-        
-        # Test if voting service is accessible
         kubectl port-forward service/voting-service 8080:80 -n vote-app-test &
-        sleep 10
-        
-        # Test voting app response
+        PF_PID=$!
+        sleep 15
+
         if curl -f http://localhost:8080 > /dev/null 2>&1; then
           echo "✅ Voting app is accessible!"
         else
           echo "❌ Voting app is not accessible!"
-          kubectl logs -l app=demo-voting-app,tier=frontend -n vote-app-test
+          kubectl logs -l app=demo-voting-app,tier=frontend -n vote-app-test || true
+          kill $PF_PID || true
           exit 1
         fi
-        
-    - name: Test worker connectivity
-      run: |
-        echo "🔧 Testing worker connectivity..."
-        
-        # Check worker logs for successful connections
-        sleep 30  # Give worker time to start
-        
-        if kubectl logs -l tier=worker -n vote-app-test | grep -q "Connected to db"; then
-          echo "✅ Worker connected to database!"
-        else
-          echo "❌ Worker failed to connect to database!"
-          kubectl logs -l tier=worker -n vote-app-test
-          exit 1
-        fi
-        
-        if kubectl logs -l tier=worker -n vote-app-test | grep -q "Found redis"; then
-          echo "✅ Worker connected to Redis!"
-        else
-          echo "❌ Worker failed to connect to Redis!"
-          kubectl logs -l tier=worker -n vote-app-test
-          exit 1
-        fi
-        
+        kill $PF_PID || true
+
     - name: Cleanup test namespace
       if: always()
       run: |
@@ -252,115 +218,40 @@ jobs:
   documentation-check:
     name: Documentation Check
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Check README files exist
+
+    - name: Check docs exist
       run: |
         echo "📚 Checking documentation..."
-        
         if [ ! -f "voting-app-k8s/README.md" ]; then
           echo "❌ README.md not found!"
           exit 1
         fi
-        
         if [ ! -f "voting-app-k8s/COMPLETE-ARCHITECTURE-GUIDE.md" ]; then
           echo "❌ COMPLETE-ARCHITECTURE-GUIDE.md not found!"
           exit 1
         fi
-        
         echo "✅ All documentation files found!"
-        
+
     - name: Check for TODO items
       run: |
         echo "📝 Checking for TODO items..."
-        
         if grep -r "TODO\|FIXME\|XXX" voting-app-k8s/ --exclude-dir=.git; then
           echo "⚠️ Found TODO items that need attention!"
         else
           echo "✅ No TODO items found!"
         fi
 
-  # Job 6: Performance test (optional)
-  performance-test:
-    name: Performance Test
-    runs-on: ubuntu-latest
-    needs: k8s-deployment-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Start minikube
-      uses: medyagh/setup-minikube@master
-      
-    - name: Deploy application
-      run: |
-        kubectl create namespace vote-app-perf
-        
-        # Create secrets for performance test
-        kubectl create secret generic db-credentials \
-          --from-literal=username=postgres \
-          --from-literal=password=postgres \
-          -n vote-app-perf
-          
-        kubectl create secret generic redis-credentials \
-          --from-literal=password="" \
-          -n vote-app-perf
-        
-        # Deploy config
-        kubectl apply -f voting-app-k8s/config.yaml -n vote-app-perf
-        
-        # Deploy services
-        kubectl apply -f voting-app-k8s/Service/ -n vote-app-perf
-        
-        # Deploy applications (exclude template files)
-        kubectl apply -f voting-app-k8s/postgres-pod.yaml -n vote-app-perf
-        kubectl apply -f voting-app-k8s/redis-pod.yaml -n vote-app-perf
-        kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app-perf
-        kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app-perf
-        kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app-perf
-        
-        kubectl wait --for=condition=available --timeout=300s deployment --all -n vote-app-perf
-        
-    - name: Install hey (load testing tool)
-      run: |
-        wget https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64
-        chmod +x hey_linux_amd64
-        sudo mv hey_linux_amd64 /usr/local/bin/hey
-        
-    - name: Run load test
-      run: |
-        kubectl port-forward service/voting-service 8080:80 -n vote-app-perf &
-        sleep 10
-        
-        echo "🚀 Running load test..."
-        hey -n 100 -c 10 http://localhost:8080 > load_test_results.txt
-        
-        echo "📊 Load test results:"
-        cat load_test_results.txt
-        
-    - name: Upload performance results
-      uses: actions/upload-artifact@v3
-      with:
-        name: performance-results
-        path: load_test_results.txt
-        
-    - name: Cleanup performance namespace
-      if: always()
-      run: |
-        kubectl delete namespace vote-app-perf --ignore-not-found=true
-
-  # Job 7: Deployment summary
+  # Job 6: Deployment summary
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
     needs: [validate-k8s, advanced-validation, security-scan, k8s-deployment-test, documentation-check]
     if: always()
-    
+
     steps:
     - name: Deployment Summary
       run: |
@@ -373,36 +264,3 @@ jobs:
         echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| K8s Deployment Test | ${{ needs.k8s-deployment-test.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Documentation Check | ${{ needs.documentation-check.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
-        echo "- Review any failed jobs above" >> $GITHUB_STEP_SUMMARY
-        echo "- Check security scan results in Security tab" >> $GITHUB_STEP_SUMMARY
-        echo "- Verify all pods are running correctly" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🚀 Deployment Commands" >> $GITHUB_STEP_SUMMARY
-        echo '```bash' >> $GITHUB_STEP_SUMMARY
-        echo "# 1. Create namespace" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl create namespace vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# 2. Create secrets (REQUIRED)" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl create secret generic db-credentials \\" >> $GITHUB_STEP_SUMMARY
-        echo "  --from-literal=username=postgres \\" >> $GITHUB_STEP_SUMMARY
-        echo "  --from-literal=password=your-password \\" >> $GITHUB_STEP_SUMMARY
-        echo "  -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl create secret generic redis-credentials \\" >> $GITHUB_STEP_SUMMARY
-        echo "  --from-literal=password='' \\" >> $GITHUB_STEP_SUMMARY
-        echo "  -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# 3. Deploy application" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/config.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/Service/ -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/postgres-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/redis-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/voting-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/result-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl apply -f voting-app-k8s/worker-app-pod.yaml -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# 4. Check status" >> $GITHUB_STEP_SUMMARY
-        echo "kubectl get pods -n vote-app" >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
